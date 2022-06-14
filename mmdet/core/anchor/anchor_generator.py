@@ -406,6 +406,8 @@ class AnchorGenerator:
         for i in range(self.num_levels):
             anchor_stride = self.strides[i]
             feat_h, feat_w = featmap_sizes[i]
+            # 按照retina的配置，首先将img pad成被32整除的大小，这个是pad size
+            # 之后还会将一个batch的input pad成统一大小，此时对应的feature size
             h, w = pad_shape[:2]
             valid_feat_h = min(int(np.ceil(h / anchor_stride[1])), feat_h)
             valid_feat_w = min(int(np.ceil(w / anchor_stride[0])), feat_w)
@@ -422,6 +424,8 @@ class AnchorGenerator:
                                  num_base_anchors,
                                  device='cuda'):
         """Generate the valid flags of anchor in a single feature map.
+        每个valid的pixel都对应num_base_anchors个anchor，只有valid pixel的anchor
+        的valid flag为True，每个anchor有一个flag
 
         Args:
             featmap_size (tuple[int]): The size of feature maps, arrange

@@ -72,8 +72,8 @@ class EmbeddingRPNHead(BaseModule):
                   (batch_size, 4), the dimension means
                   [img_width, img_height, img_width, img_height].
         """
-        proposals = self.init_proposal_bboxes.weight.clone()
-        proposals = bbox_cxcywh_to_xyxy(proposals)
+        proposals = self.init_proposal_bboxes.weight.clone()  # (num_proposals, 4)
+        proposals = bbox_cxcywh_to_xyxy(proposals)  # (num_proposals, 4)
         num_imgs = len(imgs[0])
         imgs_whwh = []
         for meta in img_metas:
@@ -85,11 +85,13 @@ class EmbeddingRPNHead(BaseModule):
         # imgs_whwh has shape (batch_size, 1, 4)
         # The shape of proposals change from (num_proposals, 4)
         # to (batch_size ,num_proposals, 4)
+        # 当一个batch数据输入的时候，他们共用当前的可学习的proposals，于是得到了
+        # bs个候选proposals集合（每个集合有num_proposals个proposals）
         proposals = proposals * imgs_whwh
 
-        init_proposal_features = self.init_proposal_features.weight.clone()
+        init_proposal_features = self.init_proposal_features.weight.clone()  # (num_proposals, d)
         init_proposal_features = init_proposal_features[None].expand(
-            num_imgs, *init_proposal_features.size())
+            num_imgs, *init_proposal_features.size())   # (batch_size, num_proposals, d)
         return proposals, init_proposal_features, imgs_whwh
 
     def forward_dummy(self, img, img_metas):

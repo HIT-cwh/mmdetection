@@ -176,6 +176,8 @@ class MaxIoUAssigner(BaseAssigner):
         # 2. assign negative: below
         # the negative inds are set to be 0
         if isinstance(self.neg_iou_thr, float):
+            # (max_overlaps >= 0)条件也需要，因为要ignore的bbox的overlap是-1，
+            # neg_iou_thr<max iou<pos_iou_thr的为忽略样本
             assigned_gt_inds[(max_overlaps >= 0)
                              & (max_overlaps < self.neg_iou_thr)] = 0
         elif isinstance(self.neg_iou_thr, tuple):
@@ -188,6 +190,9 @@ class MaxIoUAssigner(BaseAssigner):
         assigned_gt_inds[pos_inds] = argmax_overlaps[pos_inds] + 1
 
         if self.match_low_quality:
+            # 因为可能存在某些gt没有被正样本匹配到，这时我们放宽限制。先对每个gt获得
+            # 最近的bbox，若某个gt与最近bbox的iou大于min_pos_iou，就把这个gt assign给
+            # 这个bbox。不过这样可能导致assigned_gt_inds的结果不是最优预测
             # Low-quality matching will overwrite the assigned_gt_inds assigned
             # in Step 3. Thus, the assigned gt might not be the best one for
             # prediction.

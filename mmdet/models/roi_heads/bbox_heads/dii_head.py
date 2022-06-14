@@ -166,7 +166,7 @@ class DIIHead(BBoxHead):
         N, num_proposals = proposal_feat.shape[:2]
 
         # Self attention
-        proposal_feat = proposal_feat.permute(1, 0, 2)
+        proposal_feat = proposal_feat.permute(1, 0, 2)  # (num_proposals, batch_size, feature_dimensions)
         proposal_feat = self.attention_norm(self.attention(proposal_feat))
         attn_feats = proposal_feat.permute(1, 0, 2)
 

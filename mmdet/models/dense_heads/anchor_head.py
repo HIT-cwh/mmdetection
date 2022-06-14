@@ -236,6 +236,7 @@ class AnchorHead(BaseDenseHead, BBoxTestMixin):
                 num_total_pos (int): Number of positive samples in all images
                 num_total_neg (int): Number of negative samples in all images
         """
+        # 为了处理allowed_border，如果没有allowed_border，就返回valid_flags
         inside_flags = anchor_inside_flags(flat_anchors, valid_flags,
                                            img_meta['img_shape'][:2],
                                            self.train_cfg.allowed_border)
@@ -262,6 +263,8 @@ class AnchorHead(BaseDenseHead, BBoxTestMixin):
         neg_inds = sampling_result.neg_inds
         if len(pos_inds) > 0:
             if not self.reg_decoded_bbox:
+                # encode的过程中求delta的时候对dx, dy除以proposal_w和proposal_h，
+                # 以消除尺度因素，并对dw, dh做了对数处理
                 pos_bbox_targets = self.bbox_coder.encode(
                     sampling_result.pos_bboxes, sampling_result.pos_gt_bboxes)
             else:
@@ -373,6 +376,9 @@ class AnchorHead(BaseDenseHead, BBoxTestMixin):
             img_metas,
             label_channels=label_channels,
             unmap_outputs=unmap_outputs)
+        # all_labels 每个anchor对应的label，label=self.num_classes表示背景
+        # all_label_weights pos和neg anchor才为1或某个特定值
+        # all_bbox_targets anchor距离gt的delta
         (all_labels, all_label_weights, all_bbox_targets, all_bbox_weights,
          pos_inds_list, neg_inds_list, sampling_results_list) = results[:7]
         rest_results = list(results[7:])  # user-added return values
@@ -433,6 +439,7 @@ class AnchorHead(BaseDenseHead, BBoxTestMixin):
         loss_cls = self.loss_cls(
             cls_score, labels, label_weights, avg_factor=num_total_samples)
         # regression loss
+        # bbox_weights只在正样本的时候为1，其余为0，regloss只计算正样本
         bbox_targets = bbox_targets.reshape(-1, 4)
         bbox_weights = bbox_weights.reshape(-1, 4)
         bbox_pred = bbox_pred.permute(0, 2, 3, 1).reshape(-1, 4)

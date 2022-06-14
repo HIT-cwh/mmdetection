@@ -56,6 +56,7 @@ def mask_target(pos_proposals_list, pos_assigned_gt_inds_list, gt_masks_list,
         >>> assert mask_targets.shape == (5,) + cfg['mask_size']
     """
     cfg_list = [cfg for _ in range(len(pos_proposals_list))]
+    print(gt_masks_list)
     mask_targets = map(mask_target_single, pos_proposals_list,
                        pos_assigned_gt_inds_list, gt_masks_list, cfg_list)
     mask_targets = list(mask_targets)
