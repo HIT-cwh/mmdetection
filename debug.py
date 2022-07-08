@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 import copy
 
 from mmdet.models import build_detector, build_neck
@@ -21,12 +22,71 @@ from mmcv.utils import build_from_cfg
 from mmdet.core.evaluation.bbox_overlaps import bbox_overlaps
 from mmdet.datasets.builder import PIPELINES
 
-cfg = Config.fromfile(r'G:\projects\openmmlab\mmdetection\configs\hrnet\faster_rcnn_hrnetv2p_w32_1x_coco.py')
-model = build_detector(cfg.model)
-print(model)
-input()
+from mmdet.core.anchor import MlvlPointGenerator
+# strides=[8]
+# prior_generator = MlvlPointGenerator(strides)
+# print(prior_generator.grid_priors([(8, 8)], device='cpu'))
+# input()
 
-model_cfg = ConfigDict(
+def py_sigmoid_focal_loss(pred,
+                          target,
+                          weight=None,
+                          gamma=2.0,
+                          alpha=0.25,
+                          reduction='mean',
+                          avg_factor=None):
+    """PyTorch version of `Focal Loss <https://arxiv.org/abs/1708.02002>`_.
+
+    Args:
+        pred (torch.Tensor): The prediction with shape (N, C), C is the
+            number of classes
+        target (torch.Tensor): The learning label of the prediction.
+        weight (torch.Tensor, optional): Sample-wise loss weight.
+        gamma (float, optional): The gamma for calculating the modulating
+            factor. Defaults to 2.0.
+        alpha (float, optional): A balanced form for Focal Loss.
+            Defaults to 0.25.
+        reduction (str, optional): The method used to reduce the loss into
+            a scalar. Defaults to 'mean'.
+        avg_factor (int, optional): Average factor that is used to average
+            the loss. Defaults to None.
+    """
+    pred_sigmoid = pred.sigmoid()
+    target = target.type_as(pred)
+    pt = (1 - pred_sigmoid) * target + pred_sigmoid * (1 - target)
+    focal_weight = (alpha * target + (1 - alpha) *
+                    (1 - target)) * pt.pow(gamma)
+    print((alpha * target + (1 - alpha) * (1 - target)))
+    print(focal_weight)
+    loss = F.binary_cross_entropy_with_logits(
+        pred, target, reduction='none') * focal_weight
+    if weight is not None:
+        if weight.shape != loss.shape:
+            if weight.size(0) == loss.size(0):
+                # For most cases, weight is of shape (num_priors, ),
+                #  which means it does not have the second axis num_class
+                weight = weight.view(-1, 1)
+            else:
+                # Sometimes, weight per anchor per class is also needed. e.g.
+                #  in FSAF. But it may be flattened of shape
+                #  (num_priors x num_class, ), while loss is still of shape
+                #  (num_priors, num_class).
+                assert weight.numel() == loss.numel()
+                weight = weight.view(loss.size(0), -1)
+        assert weight.ndim == loss.ndim
+
+    return loss
+
+# pred = torch.rand(2, 2)
+# target = torch.tensor([1, 0])
+# num_classes = pred.size(1)
+# target = F.one_hot(target, num_classes=num_classes + 1)
+# target = target[:, :num_classes]
+# print(pred, target)
+# py_sigmoid_focal_loss(pred, target)
+# input()
+
+retina_cfg = ConfigDict(
     type='RetinaNet',
     init_cfg=dict(
         type='Pretrained',
@@ -301,8 +361,102 @@ teacher = ConfigDict(
             nms=dict(type='nms', iou_threshold=0.5),
             max_per_img=100,
             mask_thr_binary=0.5)))
-model = build_detector(teacher)
-print(hasattr(model, 'with_rpn'))
+
+def _demo_mm_inputs(input_shape=(1, 3, 300, 300),
+                    num_items=None, num_classes=10,
+                    with_semantic=False):  # yapf: disable
+    """Create a superset of inputs needed to run test or train batches.
+
+    Args:
+        input_shape (tuple):
+            input batch dimensions
+
+        num_items (None | List[int]):
+            specifies the number of boxes in each batch item
+
+        num_classes (int):
+            number of different labels a box might have
+    """
+    from mmdet.core import BitmapMasks
+
+    (N, C, H, W) = input_shape
+
+    rng = np.random.RandomState(0)
+
+    imgs = rng.rand(*input_shape)
+
+    img_metas = [{
+        'img_shape': (H, W, C),
+        'ori_shape': (H, W, C),
+        'pad_shape': (H, W, C),
+        'filename': '<demo>.png',
+        'scale_factor': np.array([1.1, 1.2, 1.1, 1.2]),
+        'flip': False,
+        'flip_direction': None,
+    } for _ in range(N)]
+
+    gt_bboxes = []
+    gt_labels = []
+    gt_masks = []
+
+    for batch_idx in range(N):
+        if num_items is None:
+            num_boxes = rng.randint(1, 10)
+        else:
+            num_boxes = num_items[batch_idx]
+
+        cx, cy, bw, bh = rng.rand(num_boxes, 4).T
+
+        tl_x = ((cx * W) - (W * bw / 2)).clip(0, W)
+        tl_y = ((cy * H) - (H * bh / 2)).clip(0, H)
+        br_x = ((cx * W) + (W * bw / 2)).clip(0, W)
+        br_y = ((cy * H) + (H * bh / 2)).clip(0, H)
+
+        boxes = np.vstack([tl_x, tl_y, br_x, br_y]).T
+        class_idxs = rng.randint(1, num_classes, size=num_boxes)
+
+        gt_bboxes.append(torch.FloatTensor(boxes))
+        gt_labels.append(torch.LongTensor(class_idxs))
+
+    mask = np.random.randint(0, 2, (len(boxes), H, W), dtype=np.uint8)
+    gt_masks.append(BitmapMasks(mask, H, W))
+
+    mm_inputs = {
+        'imgs': torch.FloatTensor(imgs).requires_grad_(True),
+        'img_metas': img_metas,
+        'gt_bboxes': gt_bboxes,
+        'gt_labels': gt_labels,
+        'gt_bboxes_ignore': None,
+        'gt_masks': gt_masks,
+    }
+
+    if with_semantic:
+        # assume gt_semantic_seg using scale 1/8 of the img
+        gt_semantic_seg = np.random.randint(
+            0, num_classes, (1, 1, H // 8, W // 8), dtype=np.uint8)
+        mm_inputs.update(
+            {'gt_semantic_seg': torch.ByteTensor(gt_semantic_seg)})
+
+    return mm_inputs
+
+model = build_detector(retina_cfg)
+input_shape = (2, 3, 300, 300)
+mm_inputs = _demo_mm_inputs(input_shape)
+imgs = mm_inputs.pop('imgs')
+img_metas = mm_inputs.pop('img_metas')
+
+# Test forward train
+gt_bboxes = mm_inputs['gt_bboxes']
+gt_labels = mm_inputs['gt_labels']
+losses = model.forward(
+    imgs,
+    img_metas,
+    gt_bboxes=gt_bboxes,
+    gt_labels=gt_labels,
+    return_loss=True)
+
+# model = build_detector(teacher)
+# print(hasattr(model, 'with_rpn'))
 input()
 
 # device = 'cpu'

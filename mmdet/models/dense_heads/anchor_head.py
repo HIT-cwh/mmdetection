@@ -245,6 +245,9 @@ class AnchorHead(BaseDenseHead, BBoxTestMixin):
         # assign gt and sample anchors
         anchors = flat_anchors[inside_flags, :]
 
+        # anchors和gt_bboxes都是原图尺度的，assign的其实是anchor与gtbbox，
+        # 比如一个pixel有9个anchor，那bbox pred也有(9, 4)的输出，每个anchor对应一个delta
+        # 作为pred的回归目标
         assign_result = self.assigner.assign(
             anchors, gt_bboxes, gt_bboxes_ignore,
             None if self.sampling else gt_labels)
@@ -436,6 +439,8 @@ class AnchorHead(BaseDenseHead, BBoxTestMixin):
         label_weights = label_weights.reshape(-1)
         cls_score = cls_score.permute(0, 2, 3,
                                       1).reshape(-1, self.cls_out_channels)
+        # retina中不计算负例的loss，计算focalloss的时候，会把负例的target设为全0，这样
+        # 计算sigmoid loss 的时候负例的loss为0，reduce_loss时avg_factor为正样本数
         loss_cls = self.loss_cls(
             cls_score, labels, label_weights, avg_factor=num_total_samples)
         # regression loss
@@ -487,6 +492,7 @@ class AnchorHead(BaseDenseHead, BBoxTestMixin):
 
         device = cls_scores[0].device
 
+        # anchor_list (num_imgs, multi_level_anchor)
         anchor_list, valid_flag_list = self.get_anchors(
             featmap_sizes, img_metas, device=device)
         label_channels = self.cls_out_channels if self.use_sigmoid_cls else 1
@@ -498,6 +504,8 @@ class AnchorHead(BaseDenseHead, BBoxTestMixin):
             gt_bboxes_ignore_list=gt_bboxes_ignore,
             gt_labels_list=gt_labels,
             label_channels=label_channels)
+        # import pdb;pdb.set_trace()
+        # print(cls_reg_targets)
         if cls_reg_targets is None:
             return None
         (labels_list, label_weights_list, bbox_targets_list, bbox_weights_list,

@@ -332,6 +332,7 @@ class YOLOV3Head(BaseDenseHead, BBoxTestMixin):
 
         responsible_flag_list = []
         for img_id in range(len(img_metas)):
+            # 计算gt的中心落在哪个块里，那个块的anchor负责回归这个gt
             responsible_flag_list.append(
                 self.prior_generator.responsible_flags(featmap_sizes,
                                                        gt_bboxes[img_id],
@@ -468,7 +469,7 @@ class YOLOV3Head(BaseDenseHead, BBoxTestMixin):
                                               gt_bboxes)
 
         target_map = concat_anchors.new_zeros(
-            concat_anchors.size(0), self.num_attrib)
+            concat_anchors.size(0), self.num_attrib)  # num_attrib: num_class + 5(c, x, y, w, h)
 
         target_map[sampling_result.pos_inds, :4] = self.bbox_coder.encode(
             sampling_result.pos_bboxes, sampling_result.pos_gt_bboxes,

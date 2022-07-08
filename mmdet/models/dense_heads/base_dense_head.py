@@ -32,6 +32,7 @@ class BaseDenseHead(BaseModule, metaclass=ABCMeta):
     def get_bboxes(self,
                    cls_scores,
                    bbox_preds,
+                   # 比如fcos的centerness就是作为score_factors传进来的，用cls_score*centerness作为nms的得分
                    score_factors=None,
                    img_metas=None,
                    cfg=None,
@@ -227,7 +228,7 @@ class BaseDenseHead(BaseModule, metaclass=ABCMeta):
                            mlvl_scores,
                            mlvl_labels,
                            mlvl_bboxes,
-                           scale_factor,
+                           scale_factor,  # resize的时候做的
                            cfg,
                            rescale=False,
                            with_nms=True,
@@ -524,3 +525,35 @@ class BaseDenseHead(BaseModule, metaclass=ABCMeta):
                                           nms_pre, cfg.max_per_img)
         else:
             return batch_bboxes, batch_scores
+
+# bboxes维度为[N,4]，scores维度为[N,], 均为tensor
+def nms(bboxes, scores, threshold=0.5):
+    _, order = scores.sort(0, descending=True)  # 降序排列
+    x1 = bboxes[:, 0]
+    y1 = bboxes[:, 1]
+    x2 = bboxes[:, 2]
+    y2 = bboxes[:, 3]
+    areas = (x2 - x1) * (y2 - y1)   # [N,] 每个bbox的面积
+    keep = []
+
+    while order.numel():
+        idx = order[0].item()
+        keep.append(idx)   # 保留scores最大的那个框box[i]
+        if order.numel() == 1:
+            break
+
+        xx1 = bboxes[order[1:], 0].clamp(min=x1[idx])  # [N-1,]
+        yy1 = bboxes[order[1:], 1].clamp(min=y1[idx])
+        xx2 = bboxes[order[1:], 2].clamp(max=x2[idx])
+        yy2 = bboxes[order[1:], 3].clamp(max=y2[idx])
+        overlap = (xx2 - xx1).clamp(min=0) * (yy2 - yy1).clamp(min=0)  # [N-1,]
+        iou = overlap / (areas[idx] + areas[order[1:]] - overlap)  # [N-1,]
+
+        idx = (iou <= threshold).nonzero().squeeze()  # 注意此时idx为[N-1,] 而order为[N,]
+        if idx.numel() == 0:
+            break
+
+        order = order[idx + 1]  # 修补索引之间的差值，所有的idx都是0起始的，但最初order0是keep的，其他的是1起始的
+
+    return torch.LongTensor(keep)
+

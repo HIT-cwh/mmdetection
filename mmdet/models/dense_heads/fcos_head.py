@@ -197,6 +197,7 @@ class FCOSHead(AnchorFreeHead):
         """
         assert len(cls_scores) == len(bbox_preds) == len(centernesses)
         featmap_sizes = [featmap.size()[-2:] for featmap in cls_scores]
+        # 特征图多大，point的坐标是基于特征图尺寸的而不是原图尺寸
         all_level_points = self.prior_generator.grid_priors(
             featmap_sizes,
             dtype=bbox_preds[0].dtype,
@@ -229,6 +230,7 @@ class FCOSHead(AnchorFreeHead):
 
         # FG cat_id: [0, num_classes -1], BG cat_id: num_classes
         bg_class_ind = self.num_classes
+        # flatten_labels = -1的是忽略样本，尚不确定为什么会有-1
         pos_inds = ((flatten_labels >= 0)
                     & (flatten_labels < bg_class_ind)).nonzero().reshape(-1)
         num_pos = torch.tensor(
@@ -254,6 +256,7 @@ class FCOSHead(AnchorFreeHead):
             loss_bbox = self.loss_bbox(
                 pos_decoded_bbox_preds,
                 pos_decoded_target_preds,
+                # 将样本点对应的 centerness 作为权重，离 GT 中心越近，权重越大。
                 weight=pos_centerness_targets,
                 avg_factor=centerness_denorm)
             loss_centerness = self.loss_centerness(
@@ -288,6 +291,8 @@ class FCOSHead(AnchorFreeHead):
         assert len(points) == len(self.regress_ranges)
         num_levels = len(points)
         # expand regress ranges to align with points
+        # regress_ranges表示每个level负责回归多大的object
+        # points[i]有多少个点，expanded_regress_ranges[i]就有多少个regress_ranges
         expanded_regress_ranges = [
             points[i].new_tensor(self.regress_ranges[i])[None].expand_as(
                 points[i]) for i in range(num_levels)
@@ -349,12 +354,16 @@ class FCOSHead(AnchorFreeHead):
         xs = xs[:, None].expand(num_points, num_gts)
         ys = ys[:, None].expand(num_points, num_gts)
 
+        # gt_bboxes (num_points, num_gts, 4)
         left = xs - gt_bboxes[..., 0]
         right = gt_bboxes[..., 2] - xs
         top = ys - gt_bboxes[..., 1]
         bottom = gt_bboxes[..., 3] - ys
         bbox_targets = torch.stack((left, top, right, bottom), -1)
 
+        # 原始论文：GT bbox 内的点，分类时均作为正样本
+        # 改进 trick：只有 GT bbox 中心附近的 radius * stride 内的小 bbox
+        # （可以叫 center bbox）内的点，分类时才作为正样本
         if self.center_sampling:
             # condition1: inside a `center bbox`
             radius = self.center_sample_radius
@@ -367,6 +376,7 @@ class FCOSHead(AnchorFreeHead):
             lvl_begin = 0
             for lvl_idx, num_points_lvl in enumerate(num_points_per_lvl):
                 lvl_end = lvl_begin + num_points_lvl
+                # 相同的radius，大物体由顶层feat负责，stride相应大一些
                 stride[lvl_begin:lvl_end] = self.strides[lvl_idx] * radius
                 lvl_begin = lvl_end
 
@@ -395,6 +405,7 @@ class FCOSHead(AnchorFreeHead):
             inside_gt_bbox_mask = bbox_targets.min(-1)[0] > 0
 
         # condition2: limit the regression range for each location
+        # 当前lvl回归的object大小的范围
         max_regress_distance = bbox_targets.max(-1)[0]
         inside_regress_range = (
             (max_regress_distance >= regress_ranges[..., 0])

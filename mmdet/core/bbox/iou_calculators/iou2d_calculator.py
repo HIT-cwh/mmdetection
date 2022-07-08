@@ -230,6 +230,7 @@ def bbox_overlaps(bboxes1, bboxes2, mode='iou', is_aligned=False, eps=1e-6):
             enclosed_lt = torch.min(bboxes1[..., :2], bboxes2[..., :2])
             enclosed_rb = torch.max(bboxes1[..., 2:], bboxes2[..., 2:])
     else:
+        # 为了计算overlap部分的左上角坐标和右下角坐标，相交的左上角是前两维（box的左上角xy坐标）的最大值
         lt = torch.max(bboxes1[..., :, None, :2],
                        bboxes2[..., None, :, :2])  # [B, rows, cols, 2]
         rb = torch.min(bboxes1[..., :, None, 2:],

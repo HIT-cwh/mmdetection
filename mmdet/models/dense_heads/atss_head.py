@@ -333,6 +333,10 @@ class ATSSHead(AnchorHead):
         This method is almost the same as `AnchorHead.get_targets()`. Besides
         returning the targets as the parent method does, it also returns the
         anchors as the first element of the returned tuple.
+        返回anchors是因为 1.计算centerness的target的时候需要，fcos的target box是
+        lrtb形式的，计算target可以直接用target box，原本的retina不需要centerness，
+        但atss需要原本的anchor计算anchor中心点坐标
+        2. atss用的giouloss
         """
         num_imgs = len(img_metas)
         assert len(anchor_list) == len(valid_flag_list) == num_imgs

@@ -530,6 +530,7 @@ def eval_map(det_results,
              nproc=4,
              use_legacy_coordinate=False,
              use_group_of=False):
+    # https://www.zhihu.com/question/53405779/answer/993913699
     """Evaluate mAP of a dataset.
 
     Args:

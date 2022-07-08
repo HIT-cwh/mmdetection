@@ -100,6 +100,7 @@ class AnchorGenerator:
                 [2**(i / scales_per_octave) for i in range(scales_per_octave)])
             scales = octave_scales * octave_base_scale
             self.scales = torch.Tensor(scales)
+            print(octave_scales, scales)
         else:
             raise ValueError('Either scales or octave_base_scale with '
                              'scales_per_octave should be set')
@@ -111,6 +112,7 @@ class AnchorGenerator:
         self.centers = centers
         self.center_offset = center_offset
         self.base_anchors = self.gen_base_anchors()
+        print(self.base_anchors)
 
     @property
     def num_base_anchors(self):

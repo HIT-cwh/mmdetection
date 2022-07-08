@@ -176,7 +176,10 @@ class MaxIoUAssigner(BaseAssigner):
         # 2. assign negative: below
         # the negative inds are set to be 0
         if isinstance(self.neg_iou_thr, float):
-            # (max_overlaps >= 0)条件也需要，因为要ignore的bbox的overlap是-1，
+            # (max_overlaps >= 0)条件也需要，因为
+            # if (self.ignore_iof_thr > 0 and gt_bboxes_ignore is not None
+            #     and gt_bboxes_ignore.numel() > 0 and bboxes.numel() > 0):时，
+            # overlaps的值被设为-1过，
             # neg_iou_thr<max iou<pos_iou_thr的为忽略样本
             assigned_gt_inds[(max_overlaps >= 0)
                              & (max_overlaps < self.neg_iou_thr)] = 0

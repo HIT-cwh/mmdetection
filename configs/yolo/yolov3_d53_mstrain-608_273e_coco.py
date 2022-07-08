@@ -19,6 +19,7 @@ model = dict(
         out_channels=[1024, 512, 256],
         anchor_generator=dict(
             type='YOLOAnchorGenerator',
+            # 每个tuple代表anchor的w和h
             base_sizes=[[(116, 90), (156, 198), (373, 326)],
                         [(30, 61), (62, 45), (59, 119)],
                         [(10, 13), (16, 30), (33, 23)]],

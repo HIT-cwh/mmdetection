@@ -32,6 +32,13 @@ def iou_loss(pred, target, linear=False, mode='log', eps=1e-6):
     Return:
         torch.Tensor: Loss tensor.
     """
+    """
+    优点：
+    1. 尺度不变性
+    缺点：
+    1. 如果两个框没有相交，无法学习
+    2. IoU无法精确的反映两者的重合度大小 见https://zhuanlan.zhihu.com/p/94799295
+    """
     assert mode in ['linear', 'square', 'log']
     if linear:
         mode = 'linear'
@@ -112,6 +119,15 @@ def giou_loss(pred, target, eps=1e-7):
     Return:
         Tensor: Loss tensor.
     """
+    # 是iouloss的下界，GIoU = IoU - |Ac - U| / |Ac|，其中Ac是两个框的最小闭包区域面积
+    # (同时包含了预测框和真实框的最小框的面积)，|Ac - U|是算闭包区域中不属于两个框的区域
+    """
+    优点：
+    1. GIoU是IoU的下界，在两个框无限重合的情况下，IoU=GIoU=1
+    2. IoU取值[0,1]，但GIoU有对称区间，取值范围[-1,1]。在两者重合的时候取最大值1，
+    在两者无交集且无限远的时候取最小值-1，因此GIoU是一个非常好的距离度量指标。
+    3. 与IoU只关注重叠区域不同，GIoU不仅关注重叠区域，还关注其他的非重合区域，能更好的反映两者的重合度。
+    """
     gious = bbox_overlaps(pred, target, mode='giou', is_aligned=True, eps=eps)
     loss = 1 - gious
     return loss
@@ -132,6 +148,13 @@ def diou_loss(pred, target, eps=1e-7):
         eps (float): Eps to avoid log(0).
     Return:
         Tensor: Loss tensor.
+    """
+    """
+    DIoU = IoU - (两框的中心的欧氏距离 / 最小闭包对角线距离) ^ 2
+    优点：
+    1. 与GIoU loss类似，在与目标框不重叠时，仍然可以为边界框提供移动方向。
+    2. 对于包含两个框在水平方向和垂直方向上这种情况，DIoU损失可以使回归非常快，而GIoU损失几乎退化为IoU损失。
+    3. DIoU还可以替换普通的IoU评价策略，应用于NMS中，使得NMS得到的结果更加合理和有效。
     """
     # overlap
     lt = torch.max(pred[:, :2], target[:, :2])

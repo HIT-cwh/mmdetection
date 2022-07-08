@@ -149,6 +149,9 @@ def inference_detector(model, imgs):
     # forward the model
     with torch.no_grad():
         results = model(return_loss=False, rescale=True, **data)
+        print(type(results))
+        print(len(results))
+        return results
 
     if not is_batch:
         return results[0]

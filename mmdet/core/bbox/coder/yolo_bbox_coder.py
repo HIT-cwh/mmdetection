@@ -50,6 +50,8 @@ class YOLOBBoxCoder(BaseBBoxCoder):
         h = bboxes[..., 3] - bboxes[..., 1]
         w_target = torch.log((w_gt / w).clamp(min=self.eps))
         h_target = torch.log((h_gt / h).clamp(min=self.eps))
+        # 这个数一定是0到1之间，某个gt框中心落在某个cell中，这个cell的anchor才负责回归这个gt
+        # anchor的中心在cell中心
         x_center_target = ((x_center_gt - x_center) / stride + 0.5).clamp(
             self.eps, 1 - self.eps)
         y_center_target = ((y_center_gt - y_center) / stride + 0.5).clamp(

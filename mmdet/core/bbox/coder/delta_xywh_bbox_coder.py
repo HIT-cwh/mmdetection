@@ -22,6 +22,10 @@ class DeltaXYWHBBoxCoder(BaseBBoxCoder):
             delta coordinates
         target_stds (Sequence[float]): Denormalizing standard deviation of
             target for delta coordinates
+        这里的mean和std是类似于img norm的统计量，平均下来mean是0，也就是上下左右均等可能
+        设置mean和std的原因是平衡回归loss和分类等其他loss的幅值，并且多个stage的detector
+        越往后的proposal越准确，delta也就越小，因此越往后std会设的越小，相当于增加loss weight
+        https://blog.csdn.net/u014311125/article/details/117750396
         clip_border (bool, optional): Whether clip the objects outside the
             border of the image. Defaults to True.
         add_ctr_clamp (bool): Whether to add center clamp, when added, the

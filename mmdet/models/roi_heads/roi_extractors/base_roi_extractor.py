@@ -24,6 +24,12 @@ class BaseRoIExtractor(BaseModule, metaclass=ABCMeta):
                  featmap_strides,
                  init_cfg=None):
         super(BaseRoIExtractor, self).__init__(init_cfg)
+        # roi align
+        # https://zhuanlan.zhihu.com/p/73138740
+        # 1. 将bbox区域按输出要求的size进行等分，很可能等分后各顶点落不到真实的像素点上
+        # 2. 在每个bin中再取固定的4个点(作者实验后发现取4效果较好)
+        # 3. 针对每一个蓝点，距离它最近的4个真实像素点的值加权(双线性插值)，求得这个蓝点的值
+        # 4. 一个bin内会算出4个新值，在这些新值中取max，作为这个bin的输出值
         self.roi_layers = self.build_roi_layers(roi_layer, featmap_strides)
         self.out_channels = out_channels
         self.featmap_strides = featmap_strides

@@ -6,6 +6,7 @@ def images_to_levels(target, num_levels):
     """Convert targets by image to targets by feature level.
 
     [target_img0, target_img1] -> [target_level0, target_level1, ...]
+    target_level0 是img0和img1的level0的stack
     """
     target = torch.stack(target, 0)
     level_targets = []

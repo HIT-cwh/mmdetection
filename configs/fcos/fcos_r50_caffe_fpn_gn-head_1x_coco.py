@@ -44,7 +44,7 @@ model = dict(
     # training and testing settings
     train_cfg=dict(
         assigner=dict(
-            type='MaxIoUAssigner',
+            type='MaxIoUAssigner', # placeholder
             pos_iou_thr=0.5,
             neg_iou_thr=0.4,
             min_pos_iou=0,

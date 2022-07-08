@@ -258,6 +258,8 @@ class GFLHead(AnchorHead):
 
         if len(pos_inds) > 0:
             pos_bbox_targets = bbox_targets[pos_inds]
+            # (nxhxw, 4 * (self.reg_max + 1)) reg_max为分桶的区间个数
+            # {0, 1, 2, ..., reg_max}
             pos_bbox_pred = bbox_pred[pos_inds]
             pos_anchors = anchors[pos_inds]
             pos_anchor_centers = self.anchor_center(pos_anchors) / stride[0]

@@ -38,7 +38,8 @@ model = dict(
             type='SingleRoIExtractor',
             roi_layer=dict(type='RoIAlign', output_size=7, sampling_ratio=0),
             out_channels=256,
-            featmap_strides=[4, 8, 16, 32]),
+            featmap_strides=[4, 8, 16, 32]  # 只取前4个level
+        ),
         bbox_head=dict(
             type='Shared2FCBBoxHead',
             in_channels=256,
@@ -48,7 +49,11 @@ model = dict(
             bbox_coder=dict(
                 type='DeltaXYWHBBoxCoder',
                 target_means=[0., 0., 0., 0.],
-                target_stds=[0.1, 0.1, 0.2, 0.2]),
+                target_stds=[0.1, 0.1, 0.2, 0.2]
+            # 这里的mean和std是类似于img norm的统计量，平均下来mean是0，也就是上下左右均等可能
+            # 设置mean和std的原因是平衡回归loss和分类等其他loss的幅值，并且多个stage的detector
+            # 越往后的proposal越准确，delta也就越小，因此越往后std会设的越小，相当于增加loss weight
+            ),
             reg_class_agnostic=False,
             loss_cls=dict(
                 type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
@@ -60,7 +65,7 @@ model = dict(
                 type='MaxIoUAssigner',
                 pos_iou_thr=0.7,
                 neg_iou_thr=0.3,
-                min_pos_iou=0.3,
+                min_pos_iou=0.3,  # MaxIoUAssigner的第四步可能导致与某个gt匹配的bbox的iou小于0.7，但至少要大于0.3
                 match_low_quality=True,
                 ignore_iof_thr=-1),
             sampler=dict(
@@ -72,6 +77,8 @@ model = dict(
             allowed_border=-1,
             pos_weight=-1,
             debug=False),
+        # 第二阶段的输入不是第一阶段的正样本，第一阶段的正样本只是为了计算loss，之后需要get box
+        # 得到第一阶段的proposal
         rpn_proposal=dict(
             nms_pre=2000,
             max_per_img=1000,

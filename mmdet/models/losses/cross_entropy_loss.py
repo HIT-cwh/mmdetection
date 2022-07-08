@@ -192,6 +192,9 @@ def mask_cross_entropy(pred,
     assert reduction == 'mean' and avg_factor is None
     num_rois = pred.size()[0]
     inds = torch.arange(0, num_rois, dtype=torch.long, device=pred.device)
+    # 对于 [公式] 中的每个点，都会输出K个二值Mask（每个类别使用sigmoid输出）。
+    # 需要注意的是，计算loss的时候，并不是每个类别的sigmoid输出都计算二值交叉熵损失，
+    # 而是该像素属于哪个类，哪个类的sigmoid输出才要计算损失
     pred_slice = pred[inds, label].squeeze(1)
     return F.binary_cross_entropy_with_logits(
         pred_slice, target, weight=class_weight, reduction='mean')[None]
