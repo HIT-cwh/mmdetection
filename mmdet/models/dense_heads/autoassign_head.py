@@ -387,6 +387,9 @@ class AutoAssignHead(FCOSHead):
                     ious = ious.new_zeros(num_points, temp_num_gt)
                 ious[~inside_gt_bbox_mask] = 0
                 ious_list.append(ious)
+            # loss_bbox最后要传给get_pos_loss_single，这里虽然把所有的点的bboxloss都计算了，
+            # 在get_pos_loss_single的center_prior_weight_list里，把gt外的lossweight置零了
+            # 本质上还是对gt内的点计算loss
             loss_bbox = self.loss_bbox(
                 decoded_bbox_preds,
                 decoded_target_preds,
@@ -496,6 +499,7 @@ class AutoAssignHead(FCOSHead):
         bottom = gt_bboxes[..., 3] - ys
         bbox_targets = torch.stack((left, top, right, bottom), -1)
         if num_gts:
+            # gt框内的都有正样本属性
             inside_gt_bbox_mask = bbox_targets.min(-1)[0] > 0
         else:
             inside_gt_bbox_mask = bbox_targets.new_zeros((num_points, num_gts),

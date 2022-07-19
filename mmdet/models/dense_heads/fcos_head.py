@@ -91,6 +91,7 @@ class FCOSHead(AnchorFreeHead):
         self.regress_ranges = regress_ranges
         self.center_sampling = center_sampling
         self.center_sample_radius = center_sample_radius
+        # 回归框的lrtb要除以stride
         self.norm_on_bbox = norm_on_bbox
         self.centerness_on_reg = centerness_on_reg
         super().__init__(
