@@ -216,6 +216,7 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
         for batch_id in range(bs):
             gt_bbox = gt_bboxes[batch_id]
             gt_label = gt_labels[batch_id]
+            # 特征图上的位置
             center_x = (gt_bbox[:, [0]] + gt_bbox[:, [2]]) * width_ratio / 2
             center_y = (gt_bbox[:, [1]] + gt_bbox[:, [3]]) * height_ratio / 2
             gt_centers = torch.cat((center_x, center_y), dim=1)
@@ -225,6 +226,13 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 ctx, cty = ct
                 scale_box_h = (gt_bbox[j][3] - gt_bbox[j][1]) * height_ratio
                 scale_box_w = (gt_bbox[j][2] - gt_bbox[j][0]) * width_ratio
+                # 参考https://zhuanlan.zhihu.com/p/96856635
+                # 这段话的意思就是在设置GT box的heat map的时候，我们不能仅仅只在
+                # top-left/bottom-right的位置设置标签（置为1），因为你看fig5啊，
+                # 其中红色的bbox为GT框，但是绿色的框其实也能很好的包围目标。所以如果在
+                # 检测中得到想绿色的这样的框的话，我们也给它保留下来。只要预测的corners
+                # 在top-left/bottom-right点的某一个半径r内，并且其与GTbox的IOU大于一个阈值
+                # (一般设为0.7)，我们将将这些点的标签不直接置为0，那置为多少呢
                 radius = gaussian_radius([scale_box_h, scale_box_w],
                                          min_overlap=0.3)
                 radius = max(0, int(radius))
