@@ -21,6 +21,7 @@ from mmcv.utils import build_from_cfg
 
 from mmdet.core.evaluation.bbox_overlaps import bbox_overlaps
 from mmdet.datasets.builder import PIPELINES
+from functools import partial
 
 from mmdet.core.anchor import MlvlPointGenerator
 # strides=[8]
@@ -88,32 +89,22 @@ def py_sigmoid_focal_loss(pred,
 
 retina_cfg = ConfigDict(
     type='RetinaNet',
-    init_cfg=dict(
-        type='Pretrained',
-        checkpoint=  # noqa: E251
-        r'G:\projects\research\checkpoint\mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'  # noqa: E501
-    ),
     backbone=dict(
-        type='SwinTransformer',
-        embed_dims=96,
-        depths=[2, 2, 18, 2],
-        num_heads=[3, 6, 12, 24],
-        window_size=7,
-        mlp_ratio=4,
-        qkv_bias=True,
-        qk_scale=None,
-        drop_rate=0.0,
-        attn_drop_rate=0.0,
-        drop_path_rate=0.2,
-        patch_norm=True,
+        type='ResNet',
+        depth=50,
+        num_stages=4,
         out_indices=(0, 1, 2, 3),
-        with_cp=False,
-        convert_weights=True
-    ),
+        frozen_stages=1,
+        norm_cfg=dict(type='BN', requires_grad=True),
+        norm_eval=True,
+        style='pytorch',
+        init_cfg=dict(type='Pretrained', checkpoint='torchvision://resnet50')),
     neck=dict(
-        type='FPNDown',
-        in_channels=[96, 192, 384, 768],
+        type='FPN',
+        in_channels=[256, 512, 1024, 2048],
         out_channels=256,
+        start_level=1,
+        add_extra_convs='on_input',
         num_outs=5),
     bbox_head=dict(
         type='RetinaHead',
@@ -448,12 +439,15 @@ img_metas = mm_inputs.pop('img_metas')
 # Test forward train
 gt_bboxes = mm_inputs['gt_bboxes']
 gt_labels = mm_inputs['gt_labels']
-losses = model.forward(
-    imgs,
-    img_metas,
-    gt_bboxes=gt_bboxes,
-    gt_labels=gt_labels,
-    return_loss=True)
+model.forward = partial(model.forward, img_metas=img_metas, gt_bboxes=gt_bboxes, gt_labels=gt_labels, return_loss=True)
+module = torch.jit.trace(model, imgs)
+print(module.graph)
+# losses = model.forward(
+#     imgs,
+#     img_metas,
+#     gt_bboxes=gt_bboxes,
+#     gt_labels=gt_labels,
+#     return_loss=True)
 
 # model = build_detector(teacher)
 # print(hasattr(model, 'with_rpn'))
