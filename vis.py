@@ -3,156 +3,196 @@ from mmdet.apis import init_detector, inference_detector, show_result_pyplot
 from mmcv.runner.checkpoint import _load_checkpoint
 import copy
 
-import torch
 import torch.nn as nn
 import torch.nn.functional as F
-class Fusion_loss_cka(nn.Module):
-    """PyTorch version of `Channel-wise Distillation for Semantic Segmentation.
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import cv2
 
-    <https://arxiv.org/abs/2011.13256>`_.
+
+class ModuleOutputsRecorder:
+
+    def __init__(self, sources):
+        super().__init__()
+        self.recording = True
+        self.data_buffer = dict()
+        self.sources = sources
+
+    def prepare_from_model(self, model):
+        self.module2name = {}
+
+        for module_name, module in model.named_modules():
+            self.module2name[module] = module_name
+        self.name2module = dict(model.named_modules())
+
+        for module_name in self.sources:
+            self.data_buffer[module_name] = list()
+            module = self.name2module[module_name]
+            module.register_forward_hook(self.forward_output_hook)
+
+    def reset_data_buffer(self):
+        for key in self.data_buffer.keys():
+            self.data_buffer[key] = list()
+
+    def forward_output_hook(self, module, inputs, outputs):
+        """Save the module's forward output.
+
+        Args:
+            module (:obj:`torch.nn.Module`): The module to register hook.
+            inputs (tuple): The input of the module.
+            outputs (tuple): The output of the module.
+        """
+        print(module)
+        if self.recording:
+            module_name = self.module2name[module]
+            self.data_buffer[module_name].append(outputs)
+
+def norm(feat):
+    N, C, H, W = feat.shape
+    feat = feat.permute(1, 0, 2, 3).reshape(C, -1)
+    mean = feat.mean(dim=-1, keepdim=True)
+    std = feat.std(dim=-1, keepdim=True)
+    centered = (feat - mean) / std
+    centered = centered.reshape(C, N, H, W).permute(1, 0, 2, 3)
+    return centered
+
+def to255(feat, mmin=None, mmax=None):
+    if mmin is None:
+        mmax = np.max(feat)
+        mmin = np.min(feat)
+    # mmax, mmin = 10, -10
+    k = (255 - 0) / (mmax - mmin)
+    normed = 0 + k * (feat - mmin)
+    return np.clip(normed.astype(int), 0, 255)
+    # return torch.clamp(normed.int(), 0, 255).cpu().numpy()
+
+
+def convert_overlay_heatmap(feat_map, img, alpha = 0.5, mmin=None, mmax=None):
+    """Convert feat_map to heatmap and overlay on image, if image is not None.
 
     Args:
-        tau (float): Temperature coefficient. Defaults to 1.0.
-        loss_weight (float): Weight of loss. Defaults to 1.0.
+        feat_map (np.ndarray, torch.Tensor): The feat_map to convert
+            with of shape (H, W), where H is the image height and W is
+            the image width.
+        img (np.ndarray, optional): The origin image. The format
+            should be RGB. Defaults to None.
+        alpha (float): The transparency of featmap. Defaults to 0.5.
+
+    Returns:
+        np.ndarray: heatmap
     """
+    assert feat_map.ndim == 2 or (feat_map.ndim == 3
+                                  and feat_map.shape[0] in [1, 3])
+    if isinstance(feat_map, torch.Tensor):
+        feat_map = feat_map.detach().cpu().numpy()
 
-    def __init__(self, loss_weight=1.0, drop_last=True, debiased=True, gram_mode='c'):
-        super(Fusion_loss_cka, self).__init__()
-        self.loss_weight = loss_weight
-        self.drop_last = drop_last
-        self.debiased = debiased
-        self.gram_mode = gram_mode
-        self.tau = 0.3
+    if feat_map.ndim == 3:
+        feat_map = feat_map.transpose(1, 2, 0)
 
-    @staticmethod
-    def gram_linear_torch(x):
-        return torch.mm(x, x.T)
+    if mmax is None:
+        norm_img = np.zeros(feat_map.shape)
+        norm_img = cv2.normalize(feat_map, norm_img, 0, 255, cv2.NORM_MINMAX)
+        # print(norm_img)
+        # print(feat_map.min(), feat_map.max())
+    else:
+        norm_img = to255(feat_map, mmin, mmax)
+        # print(norm_img)
+    print(norm_img.max())
+    norm_img = np.asarray(norm_img, dtype=np.uint8)
+    heat_img = cv2.applyColorMap(norm_img, cv2.COLORMAP_JET)
+    heat_img = cv2.cvtColor(heat_img, cv2.COLOR_BGR2RGB)
+    if img is not None:
+        heat_img = cv2.addWeighted(img, 1 - alpha, heat_img, alpha, 0)
+    return heat_img
 
-    @staticmethod
-    def center_gram_torch(gram, unbiased=False):
-        if not torch.allclose(gram, gram.T):
-            raise ValueError('Input must be a symmetric matrix.')
-        gram = gram.clone()
 
-        if unbiased:
-            n = gram.shape[0]
-            gram.fill_diagonal_(0)
-            means = gram.sum(dim=0) / (n - 2)
-            means -= means.sum() / (2 * (n - 1))
-            gram -= means[:, None]
-            gram -= means[None, :]
-            gram.fill_diagonal_(0)
+def resize(feat, ori_size, img_size, pad_size):
+    ph, pw = pad_size[:2]
+    ih, iw = img_size[:2]
+    fh, fw = feat.shape[-2:]
+    rh, rw = ih / ph, iw / pw
+    h, w = round(fh * rh), round(fw * rw)
+    feat = feat[..., :h, :w]
+    return F.interpolate(feat, ori_size[:2], mode='bilinear')
+
+
+def vis(checkpoint_file, cfg_path, place='neck', use_same_minmax=True, use_norm=True):
+    device = 'cpu'
+    img_path = 'demo/demo.jpg'
+
+    model = init_detector(cfg_path, checkpoint_file, device=device)
+    recorder = ModuleOutputsRecorder([place])
+    recorder.prepare_from_model(model)
+    print(model.bbox_head.multi_level_conv_cls)
+    result, img_metas = inference_detector(model, img_path)
+    # show_result_pyplot(model, img_path, result, score_thr=0.3)
+    ori_shape = img_metas[0]['ori_shape']
+    img_shape = img_metas[0]['img_shape']
+    pad_shape = img_metas[0]['pad_shape']
+    print(img_metas)
+    print(recorder.data_buffer)
+    outs = list(recorder.data_buffer[place][0])
+    for i in range(len(outs)):
+        outs[i] = outs[i].detach()
+
+    mmin, mmax = 100, -100
+    img = cv2.imread(img_path)
+    size = img.shape[:2]
+    for i, out in enumerate(outs):
+        if use_norm:
+            out = norm(out)
+        out = resize(out, ori_shape, img_shape, pad_shape)
+        act_max = torch.max(out, dim=1)[0]
+        mmin = min(mmin, act_max.min())
+        mmax = max(mmax, act_max.max())
+    print(mmin, mmax)
+
+    for i, out in enumerate(outs):
+        if use_norm:
+            out = norm(out)
+        out = resize(out, ori_shape, img_shape, pad_shape)
+        act_max = torch.max(out, dim=1)[0]
+        if use_same_minmax:
+            act_max = convert_overlay_heatmap(act_max[0], img, alpha=0.6,
+                                              mmin=mmin.item(),
+                                              mmax=mmax.item())
         else:
-            means = gram.mean(dim=0)
-            means -= means.mean() / 2
-            gram -= means[:, None]
-            gram -= means[None, :]
+            act_max = convert_overlay_heatmap(act_max[0], img, alpha=0.6,
+                                              mmin=act_max.min().item(),
+                                              mmax=act_max.max().item())
+        plt.axis('off')
+        plt.imshow(act_max, cmap='Reds')
+        plt.show()
+        # plt.savefig(f'gfl2/gfl_r101_fpn{i}.png', bbox_inches='tight',
+        #             pad_inches=0)
 
-        return gram
-
-    def cka_torch(self, gram_x, gram_y, debiased=False):
-        gram_x = self.center_gram_torch(gram_x, unbiased=debiased)
-        gram_y = self.center_gram_torch(gram_y, unbiased=debiased)
-
-        scaled_hsic = (gram_x * gram_y).sum()
-
-        normalization_x = torch.norm(gram_x)
-        normalization_y = torch.norm(gram_y)
-        return scaled_hsic / (normalization_x * normalization_y)
-
-    def norm(self, pred):
-        mean = pred.mean(dim=-1, keepdim=True)
-        std = pred.std(dim=-1, keepdim=True)
-        centered_S = (pred - mean) / std
-        return centered_S
-
-    def forward(self, preds_S, preds_T):
-
-        if isinstance(preds_S, torch.Tensor):
-            preds_S, preds_T = [preds_S], [preds_T]
-
-        if self.drop_last:
-            preds_S, preds_T = preds_S[:-1], preds_T[:-1]
-
-        n, c = preds_S[0].shape[:2]
-
-        loss = 0.
-        for i, pred_T in enumerate(preds_T):
-            assert not pred_T.requires_grad
-
-            size = pred_T.shape[-2:]
-            if self.gram_mode == 'c':
-                pred_T = pred_T.permute(1, 0, 2, 3).reshape(c, -1)
-                gram_t = self.gram_linear_torch(pred_T)
-            elif self.gram_mode == 'nc':
-                gram_t = self.gram_linear_torch(pred_T.reshape(n*c, -1))
-                pred_T = pred_T.permute(1, 0, 2, 3).reshape(c, -1)
-            cka_list = []
-            s_list = []
-            for pred_S in preds_S:
-                s = F.interpolate(pred_S, size, mode='bilinear')
-                if self.gram_mode == 'c':
-                    gram_s = self.gram_linear_torch(s.permute(1, 0, 2, 3).reshape(c, -1))  # c x nhw
-                elif self.gram_mode == 'nc':
-                    gram_s = self.gram_linear_torch(s.reshape(n*c, -1))   # nc x hw
-                s = s.permute(1, 0, 2, 3).reshape(c, -1)
-                s_list.append(s.unsqueeze(0))
-                # gram_s = self.gram_linear_torch(s)
-
-                cka = self.cka_torch(gram_s, gram_t, self.debiased)
-                cka_list.append(cka)
-
-            cka_list = torch.tensor(cka_list, device=pred_T.device)  # (stage_num, )
-            cka_list /= self.tau
-            print(f'stage {i} cka_list = {cka_list}')
-            print(f'stage {i} softmax = {F.softmax(cka_list)}')
-            s_list = torch.cat(s_list)  # stage_num x c x d
-            fusion_s = (s_list * F.softmax(cka_list).reshape(-1, 1, 1)).sum(dim=0)  # c x d
-            normed_fusion_s = self.norm(fusion_s)
-            normed_t = self.norm(pred_T)
-            loss += F.mse_loss(normed_fusion_s, normed_t) / 2
-
-        return loss * self.loss_weight
-
-# ckpt = _load_checkpoint('epoch_24.pth', map_location='cpu')
-# # for key in ckpt['state_dict'].keys():
-# #     print(key)
-# new_ckpt = dict()
-# new_ckpt['meta'] = ckpt['meta']
-# new_ckpt['optimizer'] = ckpt['optimizer']
-# new_ckpt['state_dict'] = dict()
-# for key, val in ckpt['state_dict'].items():
-#     if 'teacher' in key:
-#         continue
-#     print(key)
-#     kl = '.'.join(key.split('.')[2:])
-#     print(kl)
-#     new_ckpt['state_dict'][kl] = val
-#     # break
-# torch.save(new_ckpt, 'retina_r50_frcnn_distill.pth')
-# input()
-
-device = 'cpu'
-img = 'demo/demo.jpg'
 
 # checkpoint_file = r'G:\projects\research\checkpoint\mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco_20210903_104808-b92c91f1.pth'
 # model = init_detector('configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py', checkpoint_file, device=device)
 # result = inference_detector(model, img)
 
 # checkpoint_file = r'G:\projects\research\checkpoint\yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'
+# cfg_path = 'configs/yolox/yolox_x_8x8_300e_coco.py'
 # model = init_detector('configs/yolox/yolox_x_8x8_300e_coco.py', checkpoint_file, device=device)
 # result = inference_detector(model, img)
 
-# checkpoint_file = r'G:\projects\research\checkpoint\yolox_tiny_8x8_300e_coco_20211124_171234-b4047906.pth'
-# model = init_detector('configs/yolox/yolox_tiny_8x8_300e_coco.py', checkpoint_file, device=device)
-# result = inference_detector(model, img)
+checkpoint_file = r'G:\projects\research\checkpoint\yolox_s_8x8_300e_coco_20211121_095711-4592a793.pth'
+cfg_path = 'configs/yolox/yolox_s_8x8_300e_coco.py'
 
-checkpoint_file = r'G:\projects\research\checkpoint\faster_rcnn_r101_fpn_2x_coco_bbox_mAP-0.398_20200504_210455-1d2dac9c.pth'
-model = init_detector('configs/faster_rcnn/faster_rcnn_r101_fpn_2x_coco.py', checkpoint_file, device=device)
-result_frcnn = inference_detector(model, img)
+# checkpoint_file = r'G:\projects\research\checkpoint\yolox_tiny_8x8_300e_coco_20211124_171234-b4047906.pth'
+# cfg_path = 'configs/yolox/yolox_tiny_8x8_300e_coco.py'
+vis(checkpoint_file, cfg_path, place='bbox_head', use_same_minmax=False, use_norm=False)
+# input()
+
+# checkpoint_file = r'G:\projects\research\checkpoint\faster_rcnn_r101_fpn_2x_coco_bbox_mAP-0.398_20200504_210455-1d2dac9c.pth'
+# model = init_detector('configs/faster_rcnn/faster_rcnn_r101_fpn_2x_coco.py', checkpoint_file, device=device)
+# result_frcnn = inference_detector(model, img)
 
 # config_file = 'configs/gfl/gfl_r50_fpn_1x_coco.py'
 # checkpoint_file = 'https://download.openmmlab.com/mmdetection/v2.0/gfl/gfl_r50_fpn_1x_coco/gfl_r50_fpn_1x_coco_20200629_121244-25944287.pth'
+# vis(checkpoint_file, config_file)
+input()
 # model = init_detector(config_file, checkpoint_file, device=device)
 # result = inference_detector(model, img)
 #
@@ -227,10 +267,6 @@ result_retina = inference_detector(model, img)
 # fx101 = [0, 0, 2, 26, 152, 1011, 5341, 32296, 242077, 1629713, 1695624, 245846, 32826, 5321, 841, 111, 11, 1, 1, 0]
 # show_result_pyplot(model, img, result, score_thr=0.3)
 
-loss = Fusion_loss_cka(gram_mode='nc')
-print(loss(result_retina, result_frcnn))
-loss = Fusion_loss_cka(gram_mode='c')
-print(loss(result_retina, result_frcnn))
 
 # import matplotlib.pyplot as plt
 # import numpy as np

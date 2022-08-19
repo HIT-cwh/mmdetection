@@ -266,10 +266,12 @@ class GFLHead(AnchorHead):
 
             weight_targets = cls_score.detach().sigmoid()
             weight_targets = weight_targets.max(dim=1)[0][pos_inds]
+            # pos_bbox_pred是在每个桶的概率分布，pos_bbox_pred_corners是根据概率分布接linear得到的4维坐标
             pos_bbox_pred_corners = self.integral(pos_bbox_pred)
             pos_decode_bbox_pred = self.bbox_coder.decode(
                 pos_anchor_centers, pos_bbox_pred_corners)
             pos_decode_bbox_targets = pos_bbox_targets / stride[0]
+            # 每个正样本（框或者point）都有个对应的gt box作为target，他们的iou就是score
             score[pos_inds] = bbox_overlaps(
                 pos_decode_bbox_pred.detach(),
                 pos_decode_bbox_targets,

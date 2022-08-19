@@ -17,6 +17,82 @@ from ..builder import HEADS, build_loss
 from .base_dense_head import BaseDenseHead
 from .dense_test_mixins import BBoxTestMixin
 
+import torch
+import copy
+
+import torch.nn as nn
+import torch.nn.functional as F
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import cv2
+def resize(feat, ori_size, img_size, pad_size):
+    ph, pw = pad_size[:2]
+    ih, iw = img_size[:2]
+    fh, fw = feat.shape[-2:]
+    rh, rw = ih / ph, iw / pw
+    h, w = round(fh * rh), round(fw * rw)
+    feat = feat[..., :h, :w]
+    return F.interpolate(feat, ori_size[:2], mode='bilinear')
+
+def norm(feat):
+    N, C, H, W = feat.shape
+    feat = feat.permute(1, 0, 2, 3).reshape(C, -1)
+    mean = feat.mean(dim=-1, keepdim=True)
+    std = feat.std(dim=-1, keepdim=True)
+    centered = (feat - mean) / std
+    centered = centered.reshape(C, N, H, W).permute(1, 0, 2, 3)
+    return centered
+
+def to255(feat, mmin=None, mmax=None):
+    if mmin is None:
+        mmax = np.max(feat)
+        mmin = np.min(feat)
+    # mmax, mmin = 10, -10
+    k = (255 - 0) / (mmax - mmin)
+    normed = 0 + k * (feat - mmin)
+    return np.clip(normed.astype(int), 0, 255)
+    # return torch.clamp(normed.int(), 0, 255).cpu().numpy()
+
+
+def convert_overlay_heatmap(feat_map, img, alpha = 0.5, mmin=None, mmax=None):
+    """Convert feat_map to heatmap and overlay on image, if image is not None.
+
+    Args:
+        feat_map (np.ndarray, torch.Tensor): The feat_map to convert
+            with of shape (H, W), where H is the image height and W is
+            the image width.
+        img (np.ndarray, optional): The origin image. The format
+            should be RGB. Defaults to None.
+        alpha (float): The transparency of featmap. Defaults to 0.5.
+
+    Returns:
+        np.ndarray: heatmap
+    """
+    assert feat_map.ndim == 2 or (feat_map.ndim == 3
+                                  and feat_map.shape[0] in [1, 3])
+    if isinstance(feat_map, torch.Tensor):
+        feat_map = feat_map.detach().cpu().numpy()
+
+    if feat_map.ndim == 3:
+        feat_map = feat_map.transpose(1, 2, 0)
+
+    if mmax is None:
+        norm_img = np.zeros(feat_map.shape)
+        norm_img = cv2.normalize(feat_map, norm_img, 0, 255, cv2.NORM_MINMAX)
+        # print(norm_img)
+        # print(feat_map.min(), feat_map.max())
+    else:
+        norm_img = to255(feat_map, mmin, mmax)
+        # print(norm_img)
+    print(norm_img.max())
+    norm_img = np.asarray(norm_img, dtype=np.uint8)
+    heat_img = cv2.applyColorMap(norm_img, cv2.COLORMAP_JET)
+    heat_img = cv2.cvtColor(heat_img, cv2.COLOR_BGR2RGB)
+    if img is not None:
+        heat_img = cv2.addWeighted(img, 1 - alpha, heat_img, alpha, 0)
+    return heat_img
+
 
 @HEADS.register_module()
 class YOLOXHead(BaseDenseHead, BBoxTestMixin):
@@ -192,6 +268,22 @@ class YOLOXHead(BaseDenseHead, BBoxTestMixin):
         cls_score = conv_cls(cls_feat)
         bbox_pred = conv_reg(reg_feat)
         objectness = conv_obj(reg_feat)
+
+        ori_shape = (427, 640, 3)
+        img_shape = (427, 640, 3)
+        pad_shape = (640, 640, 3)
+        img_path = 'demo/demo.jpg'
+        img = cv2.imread(img_path)
+
+        score = resize(cls_score.sigmoid(), ori_shape, img_shape, pad_shape)
+        act_max = torch.max(score, dim=1)[0]
+        print(act_max.min(), act_max.max())
+        act_max = convert_overlay_heatmap(act_max[0], img, alpha=0.6,
+                                          mmin=act_max.min().item(),
+                                          mmax=act_max.max().item())
+        plt.axis('off')
+        plt.imshow(act_max, cmap='Reds')
+        plt.show()
 
         return cls_score, bbox_pred, objectness
 
