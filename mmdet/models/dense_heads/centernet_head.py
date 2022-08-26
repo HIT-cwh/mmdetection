@@ -243,6 +243,10 @@ class CenterNetHead(BaseDenseHead, BBoxTestMixin):
                 wh_target[batch_id, 0, cty_int, ctx_int] = scale_box_w
                 wh_target[batch_id, 1, cty_int, ctx_int] = scale_box_h
 
+                # 为什么需要预测offset，因为gt中心在当前lvl下的点可能是个小数，而我们把
+                # 取整后的点作为pos正样本中心点，回归值也是基于当前特征图上的正样本点的，
+                # 映射回原图坐标会有微小区别，因此在inference的是需要结合网络预测的中心点坐标和
+                # offset共同得到inference结果
                 offset_target[batch_id, 0, cty_int, ctx_int] = ctx - ctx_int
                 offset_target[batch_id, 1, cty_int, ctx_int] = cty - cty_int
 
