@@ -269,21 +269,21 @@ class YOLOXHead(BaseDenseHead, BBoxTestMixin):
         bbox_pred = conv_reg(reg_feat)
         objectness = conv_obj(reg_feat)
 
-        ori_shape = (427, 640, 3)
-        img_shape = (427, 640, 3)
-        pad_shape = (640, 640, 3)
-        img_path = 'demo/demo.jpg'
-        img = cv2.imread(img_path)
-
-        score = resize(cls_score.sigmoid(), ori_shape, img_shape, pad_shape)
-        act_max = torch.max(score, dim=1)[0]
-        print(act_max.min(), act_max.max())
-        act_max = convert_overlay_heatmap(act_max[0], img, alpha=0.6,
-                                          mmin=act_max.min().item(),
-                                          mmax=act_max.max().item())
-        plt.axis('off')
-        plt.imshow(act_max, cmap='Reds')
-        plt.show()
+        # ori_shape = (427, 640, 3)
+        # img_shape = (427, 640, 3)
+        # pad_shape = (640, 640, 3)
+        # img_path = 'demo/demo.jpg'
+        # img = cv2.imread(img_path)
+        #
+        # score = resize(cls_score.sigmoid(), ori_shape, img_shape, pad_shape)
+        # act_max = torch.max(score, dim=1)[0]
+        # print(act_max.min(), act_max.max())
+        # act_max = convert_overlay_heatmap(act_max[0], img, alpha=0.6,
+        #                                   mmin=act_max.min().item(),
+        #                                   mmax=act_max.max().item())
+        # plt.axis('off')
+        # plt.imshow(act_max, cmap='Reds')
+        # plt.show()
 
         return cls_score, bbox_pred, objectness
 
