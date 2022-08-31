@@ -38,6 +38,8 @@ def py_sigmoid_focal_loss(pred,
     # 正样本也需适当减小weight
     # FL本质上解决的是将大量易学习样本的loss权重降低，但是不丢弃样本，突出难学习样本的loss权重，
     # 但是因为大部分易学习样本都是负样本，所以顺便解决了正负样本不平衡问题。
+    # 这里计算的pt实际上是论文中的1-pt，pt越大越好但pt太接近于1的时候说明是容易样本，所以focal weight=(1-pt)^gamma
+    # pt = target * p + (1-target)*(1-p), 1 - pt = (1-p)*target + p * (1 - target)也就是下式
     pt = (1 - pred_sigmoid) * target + pred_sigmoid * (1 - target)
     focal_weight = (alpha * target + (1 - alpha) *
                     (1 - target)) * pt.pow(gamma)
