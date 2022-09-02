@@ -125,8 +125,7 @@ def vis(checkpoint_file, cfg_path, place=['neck'], use_same_minmax=True, use_nor
     recorder = ModuleOutputsRecorder(place)
     recorder.prepare_from_model(model)
     result, img_metas = inference_detector(model, img_path)
-    show_result_pyplot(model, img_path, result, score_thr=0.3)
-    input()
+    # show_result_pyplot(model, img_path, result, score_thr=0.3)
     ori_shape = img_metas[0]['ori_shape']
     img_shape = img_metas[0]['img_shape']
     pad_shape = img_metas[0]['pad_shape']
@@ -177,23 +176,28 @@ def vis(checkpoint_file, cfg_path, place=['neck'], use_same_minmax=True, use_nor
 # model = init_detector('configs/swin/mask_rcnn_swin-s-p4-w7_fpn_fp16_ms-crop-3x_coco.py', checkpoint_file, device=device)
 # result = inference_detector(model, img)
 
-# checkpoint_file = r'G:\projects\research\checkpoint\yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'
-# cfg_path = 'configs/yolox/yolox_x_8x8_300e_coco.py'
+checkpoint_file = r'G:\projects\research\checkpoint\yolox_x_8x8_300e_coco_20211126_140254-1ef88d67.pth'
+cfg_path = 'configs/yolox/yolox_x_8x8_300e_coco.py'
 # model = init_detector('configs/yolox/yolox_x_8x8_300e_coco.py', checkpoint_file, device=device)
 # result = inference_detector(model, img)
 
 # checkpoint_file = r'G:\projects\research\checkpoint\yolox_s_8x8_300e_coco_20211121_095711-4592a793.pth'
 # cfg_path = 'configs/yolox/yolox_s_8x8_300e_coco.py'
 
+
 # checkpoint_file = r'G:\projects\research\checkpoint\yolov3_d53_mstrain-608_273e_coco_20210518_115020-a2c3acb8.pth'
 # cfg_path = 'configs/yolo/yolov3_d53_mstrain-608_273e_coco.py'
 
-checkpoint_file = r'G:\projects\research\checkpoint\centernet_resnet18_dcnv2_140e_coco_20210702_155131-c8cd631f.pth'
-cfg_path = 'configs/centernet/centernet_resnet18_dcnv2_140e_coco.py'
+# checkpoint_file = r'G:\projects\research\checkpoint\centernet_resnet18_dcnv2_140e_coco_20210702_155131-c8cd631f.pth'
+# cfg_path = 'configs/centernet/centernet_resnet18_dcnv2_140e_coco.py'
 
 # checkpoint_file = r'G:\projects\research\checkpoint\yolox_tiny_8x8_300e_coco_20211124_171234-b4047906.pth'
 # cfg_path = 'configs/yolox/yolox_tiny_8x8_300e_coco.py'
-vis(checkpoint_file, cfg_path, place=['neck'], use_same_minmax=False, use_norm=True)
+pre_bn = ['neck.out_convs.0.conv', 'neck.out_convs.1.conv', 'neck.out_convs.2.conv']
+pre_act = ['neck.out_convs.0.bn', 'neck.out_convs.1.bn', 'neck.out_convs.2.bn']
+post_act = ['neck.out_convs.0.activate', 'neck.out_convs.1.activate', 'neck.out_convs.2.activate']
+neck = ['neck']
+vis(checkpoint_file, cfg_path, place=neck, use_same_minmax=False, use_norm=False)
 # input()
 
 # checkpoint_file = r'G:\projects\research\checkpoint\faster_rcnn_r101_fpn_2x_coco_bbox_mAP-0.398_20200504_210455-1d2dac9c.pth'
