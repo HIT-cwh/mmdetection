@@ -25,6 +25,10 @@ def unpack_img_metas(batch_data_samples: SampleList) -> List:
         data_samples.metainfo for data_samples in batch_data_samples
     ]
     return batch_img_metas
+
+torch.fx.wrap(unpack_gt_instances)
+
+
 class BaseDenseHead(BaseModule, metaclass=ABCMeta):
     """Base class for DenseHeads.
 
